@@ -105,3 +105,12 @@ resource "aws_db_instance" "default" {
   publicly_accessible  = true
 
 }
+
+resource "aws_ecr_repository" "numbers_api" {
+    name                 = "numbers-api"
+    image_tag_mutability = "MUTABLE"
+    image_scanning_configuration {
+      scan_on_push = true
+    }
+  }
+
