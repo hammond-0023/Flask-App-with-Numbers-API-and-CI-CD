@@ -1,19 +1,13 @@
 FROM python:3.9-slim
 
-  # Set working directory
-  WORKDIR /app
+WORKDIR /app
 
-  # Copy requirements
-  COPY requirements.txt .
+COPY requirements.txt .
 
-  # Install dependencies
-  RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-  # Copy application code
-  COPY app.py .
+COPY . .
 
-  # Expose port
-  EXPOSE 5000
+EXPOSE 80
 
-  # Run with Gunicorn for production
-  CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:80", "app:app"]

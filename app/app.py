@@ -1,20 +1,50 @@
 from flask import Flask, request, jsonify
 import redis
-import psycopg2
-import random
+import mysql.connector
+import json
+import os
+from datetime import datetime
 
-app = Flask(__name__)
+app = Flask("Numbers_App")
 
-# Redis connection
-redis_client = redis.Redis(host='your-redis-endpoint', port=6379, db=0)
+# Configuration from environment variables
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+DB_HOST = os.environ.get('DB_HOST', 'localhost')
+DB_USER = os.environ.get('DB_USER', 'admin')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
+DB_NAME = os.environ.get('DB_NAME', 'factsDB')
+
+# Initialize Redis connection
+redis_client = redis.Redis.from_url(REDIS_URL)
+
+def get_db_connection():
+    """Get a MySQL database connection"""
+    return mysql.connector.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
 
 def get_number_facts(number):
-    # Check cache first
-    cached = redis_client.get(f"facts:{number}")
-    if cached:
-        return json.loads(cached)
+    """Retrieve or generate number facts with caching"""
+    # First check Redis cache
+    cache_key = f"facts:{number}"
+    cached = redis_client.get(cache_key)
     
-    # Generate interesting facts
+    if cached:
+        # Update last_accessed timestamp in MySQL
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE number_facts 
+            SET last_accessed = NOW() 
+            WHERE number = %s
+        """, (number,))
+        conn.commit()
+        return json.loads(cached)
+
+    # Generate facts if not cached
     facts = [
         f"{number} is {'even' if number % 2 == 0 else 'odd'}",
         f"The square root of {number} is approximately {round(number ** 0.5, 2)}",
@@ -28,9 +58,20 @@ def get_number_facts(number):
         f"The sum of all numbers from 1 to {number} is {(number * (number + 1)) // 2}",
         f"{number} degrees Celsius is equal to {((number * 9/5) + 32)} degrees Fahrenheit"
     ]))
-    
-    # Cache the result
-    redis_client.set(f"facts:{number}", json.dumps(facts))
+
+    # Store in MySQL
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO number_facts (number, facts, created_at, last_accessed)
+        VALUES (%s, %s, NOW(), NOW())
+        ON CONFLICT (number) DO UPDATE 
+        SET facts = EXCLUDED.facts, last_accessed = NOW()
+    """, (number, json.dumps(facts)))
+    conn.commit()
+
+    # Cache in Redis with TTL of 24 hours
+    redis_client.setex(cache_key, 86400, json.dumps(facts))
     return facts
 
 @app.route('/api/facts', methods=['POST'])
