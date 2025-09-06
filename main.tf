@@ -114,3 +114,24 @@ resource "aws_ecr_repository" "numbers_api" {
     }
   }
 
+resource "aws_instance" "app_server2" {
+  ami           = "ami-015cbce10f839bd0c"
+  instance_type = "t2.micro"
+  subnet_id     = var.subnet_id
+  availability_zone = "eu-central-1a"
+
+  tags = {
+    Name = "AppServer2"
+  }
+
+  user_data = <<-EOF
+              #!/bin/bash
+              # Install Docker
+              apt-get update
+              apt-get install -y docker.io
+              systemctl start docker
+              systemctl enable docker
+              EOF
+
+  
+}
