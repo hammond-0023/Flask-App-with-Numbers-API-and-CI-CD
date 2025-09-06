@@ -20,3 +20,9 @@ variable "hammond_subnet_ids" {
   type        = list(string)
   description = "List of subnet IDs for HammondVPC"
 }
+
+variable "gateway_id" {
+  description = "The ID of the internet gateway"
+  type        = string
+  default     = "igw-063618f01c8ce7996"
+}
