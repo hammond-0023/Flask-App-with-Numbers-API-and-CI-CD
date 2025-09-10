@@ -135,3 +135,113 @@ resource "aws_instance" "app_server2" {
 
   
 }
+
+# Create IAM role for Lambda
+resource "aws_iam_role" "lambda_exec" {
+  name        = "numbers-api-lambda-exec"
+  description = "Execution role for numbers API Lambda function"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+        Effect = "Allow"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "lambda_policy" {
+  name        = "numbers-api-lambda-policy"
+  description = "Policy for numbers API Lambda function"
+
+  policy      = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+        Effect    = "Allow"
+      },
+      {
+        Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface",
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:UnassignPrivateIpAddresses"
+        ]
+        Resource = "*"
+        Effect    = "Allow"
+      },
+      {
+        Action = [
+          "rds-db:connect"
+        ]
+        Resource = aws_db_instance.default.arn
+        Effect    = "Allow"
+      },
+      {
+        Action = [
+          "redis:*"
+        ]
+        Resource = aws_elasticache_cluster.cache.arn
+        Effect    = "Allow"
+      }
+    ]
+  })
+}
+
+# Attach policy to role
+resource "aws_iam_role_policy_attachment" "lambda_attach" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = aws_iam_policy.lambda_policy.arn
+}
+
+resource "aws_lambda_function" "numbers_api" {
+  filename      = "lambda_function.zip"
+  function_name = "numbers-api-lambda"
+  handler       = "index.lambda_handler"
+  runtime       = "python3.9"
+  role          = aws_iam_role.lambda_exec.arn
+  
+  environment {
+    variables = {
+      DB_HOST     = aws_db_instance.default.address
+      DB_USER     = "admin"
+      DB_PASSWORD = var.db_password
+      DB_NAME     = "factsDB"
+    }
+  }
+
+  vpc_config {
+    security_group_ids = [aws_security_group.app_sg.id]
+    subnet_ids         = [var.subnet_id]
+  }
+}
+
+resource "aws_api_gateway_rest_api" "numbers_api" {
+  name        = "Numbers-API"
+  description = "REST API for number facts"
+}
+
+resource "aws_api_gateway_resource" "facts_resource" {
+  rest_api_id = aws_api_gateway_rest_api.numbers_api.id
+  parent_id   = aws_api_gateway_rest_api.numbers_api.root_resource_id
+  path_part   = "facts"
+}
+
+resource "aws_api_gateway_method" "get_facts" {
+  rest_api_id   = aws_api_gateway_rest_api.numbers_api.id
+  resource_id   = aws_api_gateway_resource.facts_resource.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
